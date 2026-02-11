@@ -6,6 +6,13 @@
 import tmdbApi from "./api.js";
 import { getImageUrl, isApiKeyConfigured } from "./config.js";
 import filterState from "./filterState.js";
+import { scoreMovies } from "./scoring.js";
+import {
+  getFavorites,
+  isFavorite,
+  toggleFavorite,
+  toFavoriteMovie,
+} from "./favorites.js";
 
 // Élément principal où injecter le contenu
 const app = document.getElementById("app");
@@ -45,6 +52,10 @@ function createMovieCard(movie) {
     ? new Date(movie.release_date).toLocaleDateString("fr-FR")
     : "Date inconnue";
   const rating = movie.vote_average ? movie.vote_average.toFixed(1) : "N/A";
+  const favorite = isFavorite(movie.id);
+  const favoritePayload = encodeURIComponent(
+    JSON.stringify(toFavoriteMovie(movie)),
+  );
 
   return `
         <article class="movie-card" data-movie-id="${movie.id}">
@@ -54,6 +65,16 @@ function createMovieCard(movie) {
                 class="movie-card__poster"
                 loading="lazy"
             >
+            <button
+                type="button"
+                class="movie-card__favorite ${favorite ? "is-favorite" : ""}"
+                aria-pressed="${favorite ? "true" : "false"}"
+                aria-label="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
+                title="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
+                data-movie="${favoritePayload}"
+            >
+                ❤
+            </button>
             <div class="movie-card__info">
                 <h3 class="movie-card__title" title="${movie.title}">${movie.title}</h3>
                 <p class="movie-card__date">${releaseDate}</p>
@@ -71,6 +92,54 @@ function addMovieCardListeners() {
     card.addEventListener("click", () => {
       const movieId = card.dataset.movieId;
       window.location.hash = `/movie/${movieId}`;
+    });
+  });
+
+  document.querySelectorAll(".movie-card__favorite").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const encodedMovie = button.dataset.movie;
+      if (!encodedMovie) return;
+
+      let moviePayload = null;
+      try {
+        moviePayload = JSON.parse(decodeURIComponent(encodedMovie));
+      } catch (error) {
+        moviePayload = null;
+      }
+
+      if (!moviePayload) return;
+
+      const result = toggleFavorite(moviePayload);
+      const isFav = result.isFavorite;
+
+      button.classList.toggle("is-favorite", isFav);
+      button.setAttribute("aria-pressed", isFav ? "true" : "false");
+      button.setAttribute(
+        "aria-label",
+        isFav ? "Retirer des favoris" : "Ajouter aux favoris",
+      );
+      button.setAttribute(
+        "title",
+        isFav ? "Retirer des favoris" : "Ajouter aux favoris",
+      );
+
+      const favoritesContainer = button.closest('[data-view="favorites"]');
+      if (!isFav && favoritesContainer) {
+        const card = button.closest(".movie-card");
+        if (card) {
+          card.remove();
+        }
+        const remaining =
+          favoritesContainer.querySelectorAll(".movie-card").length;
+        const countEl = document.querySelector(".results-count");
+        if (countEl) {
+          countEl.textContent = `${remaining} film(s) en favori`;
+        }
+        if (remaining === 0) {
+          favoritesView();
+        }
+      }
     });
   });
 }
@@ -101,59 +170,6 @@ function generateRatingOptions() {
 }
 
 /**
- * Calculer un score de recence entre 0 et 1
- * @param {string} releaseDate
- * @returns {number}
- */
-function getRecencyScore(releaseDate) {
-  if (!releaseDate) return 0;
-  const releaseTimestamp = new Date(releaseDate).getTime();
-  if (Number.isNaN(releaseTimestamp)) return 0;
-
-  const now = Date.now();
-  const ageInDays = Math.max(0, (now - releaseTimestamp) / (1000 * 60 * 60 * 24));
-  const maxAgeInDays = 365 * 30; // 30 ans: au-dela, score de recence proche de 0
-  return Math.max(0, Math.min(1, 1 - ageInDays / maxAgeInDays));
-}
-
-/**
- * Trier des films selon les poids utilisateur
- * @param {Array} movies
- * @returns {Array}
- */
-function rankMoviesByWeights(movies) {
-  if (!Array.isArray(movies) || movies.length === 0) return [];
-
-  const weights = filterState.getNormalizedWeights();
-  const maxPopularity = Math.max(
-    1,
-    ...movies.map((movie) => Number(movie.popularity) || 0),
-  );
-
-  return [...movies].sort((a, b) => {
-    const aPopularity = Math.max(0, (Number(a.popularity) || 0) / maxPopularity);
-    const bPopularity = Math.max(0, (Number(b.popularity) || 0) / maxPopularity);
-
-    const aRating = Math.max(0, Math.min(1, (Number(a.vote_average) || 0) / 10));
-    const bRating = Math.max(0, Math.min(1, (Number(b.vote_average) || 0) / 10));
-
-    const aRecency = getRecencyScore(a.release_date);
-    const bRecency = getRecencyScore(b.release_date);
-
-    const aScore =
-      aPopularity * weights.popularity +
-      aRating * weights.rating +
-      aRecency * weights.recency;
-    const bScore =
-      bPopularity * weights.popularity +
-      bRating * weights.rating +
-      bRecency * weights.recency;
-
-    return bScore - aScore;
-  });
-}
-
-/**
  * Générer le HTML du panneau de filtres
  * @param {Array} genres - Liste des genres
  * @returns {string} HTML du panneau
@@ -161,8 +177,7 @@ function rankMoviesByWeights(movies) {
 function createFiltersPanel(genres) {
   const state = filterState.getState();
   const languages = filterState.getLanguages();
-  const normalizedWeights = filterState.getNormalizedWeights();
-  
+
   return `
     <div class="filters-panel">
       <div class="filters-panel__header">
@@ -178,11 +193,15 @@ function createFiltersPanel(genres) {
           <label for="filter-genre" class="filter-group__label">Genre</label>
           <select id="filter-genre" class="filter-group__select">
             <option value="">Tous les genres</option>
-            ${genres.map(g => `
-              <option value="${g.id}" ${state.genre == g.id ? 'selected' : ''}>
+            ${genres
+              .map(
+                (g) => `
+              <option value="${g.id}" ${state.genre == g.id ? "selected" : ""}>
                 ${g.name}
               </option>
-            `).join('')}
+            `,
+              )
+              .join("")}
           </select>
         </div>
         
@@ -207,107 +226,32 @@ function createFiltersPanel(genres) {
           <label for="filter-language" class="filter-group__label">Langue originale</label>
           <select id="filter-language" class="filter-group__select">
             <option value="">Toutes les langues</option>
-            ${languages.map(l => `
-              <option value="${l.iso_639_1}" ${state.language === l.iso_639_1 ? 'selected' : ''}>
+            ${languages
+              .map(
+                (l) => `
+              <option value="${l.iso_639_1}" ${state.language === l.iso_639_1 ? "selected" : ""}>
                 ${l.name}
               </option>
-            `).join('')}
+            `,
+              )
+              .join("")}
           </select>
         </div>
       </div>
-
-      <div class="weights-panel">
-        <h4 class="weights-panel__title">Pondération du classement</h4>
-
-        <div class="weight-control">
-          <div class="weight-control__header">
-            <label for="weight-popularity" class="filter-group__label">Popularité</label>
-            <span id="weight-popularity-value" class="weight-control__value">${state.weightPopularity}</span>
-          </div>
-          <input
-            id="weight-popularity"
-            class="weight-control__slider"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            value="${state.weightPopularity}"
-          >
-        </div>
-
-        <div class="weight-control">
-          <div class="weight-control__header">
-            <label for="weight-rating" class="filter-group__label">Note</label>
-            <span id="weight-rating-value" class="weight-control__value">${state.weightRating}</span>
-          </div>
-          <input
-            id="weight-rating"
-            class="weight-control__slider"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            value="${state.weightRating}"
-          >
-        </div>
-
-        <div class="weight-control">
-          <div class="weight-control__header">
-            <label for="weight-recency" class="filter-group__label">Récence</label>
-            <span id="weight-recency-value" class="weight-control__value">${state.weightRecency}</span>
-          </div>
-          <input
-            id="weight-recency"
-            class="weight-control__slider"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            value="${state.weightRecency}"
-          >
-        </div>
-
-        <p class="weights-panel__normalized" id="weights-normalized-display">
-          Normalisé: Popularité ${(normalizedWeights.popularity * 100).toFixed(0)}% •
-          Note ${(normalizedWeights.rating * 100).toFixed(0)}% •
-          Récence ${(normalizedWeights.recency * 100).toFixed(0)}%
-        </p>
-      </div>
       
-      ${filterState.hasActiveFilters() ? `
+      ${
+        filterState.hasActiveFilters()
+          ? `
         <div class="filters-panel__active">
           <span class="filters-panel__count">
             ${filterState.getActiveFiltersCount()} filtre(s) actif(s)
           </span>
         </div>
-      ` : ''}
+      `
+          : ""
+      }
     </div>
   `;
-}
-
-/**
- * Mettre a jour l'affichage des valeurs de sliders
- */
-function updateWeightIndicators() {
-  const state = filterState.getState();
-  const normalized = filterState.getNormalizedWeights();
-
-  const popularityValue = document.getElementById("weight-popularity-value");
-  if (popularityValue) popularityValue.textContent = state.weightPopularity;
-
-  const ratingValue = document.getElementById("weight-rating-value");
-  if (ratingValue) ratingValue.textContent = state.weightRating;
-
-  const recencyValue = document.getElementById("weight-recency-value");
-  if (recencyValue) recencyValue.textContent = state.weightRecency;
-
-  const normalizedDisplay = document.getElementById("weights-normalized-display");
-  if (normalizedDisplay) {
-    normalizedDisplay.textContent =
-      `Normalisé: Popularité ${(normalized.popularity * 100).toFixed(0)}% • ` +
-      `Note ${(normalized.rating * 100).toFixed(0)}% • ` +
-      `Récence ${(normalized.recency * 100).toFixed(0)}%`;
-  }
 }
 
 /**
@@ -331,43 +275,61 @@ function createNoResultsMessage() {
 }
 
 /**
+ * Afficher un message quand aucun favori n'est enregistré
+ * @returns {string} HTML du message
+ */
+function createNoFavoritesMessage() {
+  return `
+    <div class="no-results">
+      <div class="no-results__icon">💡</div>
+      <h3 class="no-results__title">Aucune recommandation pour le moment</h3>
+      <p class="no-results__text">
+        Ajoutez des films à vos favoris pour les retrouver ici.
+        <br>Explorez la section Découverte ou Populaires.
+      </p>
+      <a href="#/discover" class="no-results__button">Découvrir des films</a>
+    </div>
+  `;
+}
+
+/**
  * Initialiser les écouteurs d'événements des filtres
  * @param {Function} onFilterChange - Callback appelé lors d'un changement
  */
 function initFilterListeners(onFilterChange) {
   // Genre
-  const genreSelect = document.getElementById('filter-genre');
+  const genreSelect = document.getElementById("filter-genre");
   if (genreSelect) {
     genreSelect.value = filterState.getState().genre;
-    genreSelect.addEventListener('change', (e) => {
-      filterState.setFilter('genre', e.target.value);
+    genreSelect.addEventListener("change", (e) => {
+      filterState.setFilter("genre", e.target.value);
     });
   }
-  
+
   // Année
-  const yearSelect = document.getElementById('filter-year');
+  const yearSelect = document.getElementById("filter-year");
   if (yearSelect) {
     yearSelect.value = filterState.getState().yearMin;
-    yearSelect.addEventListener('change', (e) => {
-      filterState.setFilter('yearMin', e.target.value);
+    yearSelect.addEventListener("change", (e) => {
+      filterState.setFilter("yearMin", e.target.value);
     });
   }
-  
+
   // Note
-  const ratingSelect = document.getElementById('filter-rating');
+  const ratingSelect = document.getElementById("filter-rating");
   if (ratingSelect) {
     ratingSelect.value = filterState.getState().ratingMin;
-    ratingSelect.addEventListener('change', (e) => {
-      filterState.setFilter('ratingMin', e.target.value);
+    ratingSelect.addEventListener("change", (e) => {
+      filterState.setFilter("ratingMin", e.target.value);
     });
   }
-  
+
   // Langue
-  const languageSelect = document.getElementById('filter-language');
+  const languageSelect = document.getElementById("filter-language");
   if (languageSelect) {
     languageSelect.value = filterState.getState().language;
-    languageSelect.addEventListener('change', (e) => {
-      filterState.setFilter('language', e.target.value);
+    languageSelect.addEventListener("change", (e) => {
+      filterState.setFilter("language", e.target.value);
     });
   }
 
@@ -397,23 +359,23 @@ function initFilterListeners(onFilterChange) {
       filterState.setFilter("weightRecency", e.target.value);
     });
   }
-  
+
   // Bouton reset
-  const resetBtn = document.getElementById('reset-filters');
+  const resetBtn = document.getElementById("reset-filters");
   if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
+    resetBtn.addEventListener("click", () => {
       filterState.resetFilters();
     });
   }
-  
+
   // Bouton clear dans le message "no results"
-  const clearBtn = document.getElementById('clear-filters-btn');
+  const clearBtn = document.getElementById("clear-filters-btn");
   if (clearBtn) {
-    clearBtn.addEventListener('click', () => {
+    clearBtn.addEventListener("click", () => {
       filterState.resetFilters();
     });
   }
-  
+
   // S'abonner aux changements de filtres
   return filterState.subscribe(onFilterChange);
 }
@@ -433,7 +395,7 @@ export async function homeView() {
 
   try {
     const data = await tmdbApi.getPopularMovies();
-    const movies = data.results.slice(0, 8); // Limiter à 8 films pour l'accueil
+    const movies = scoreMovies(data.results).slice(0, 8); // Limiter à 8 films pour l'accueil
 
     app.innerHTML = `
             <section class="hero">
@@ -470,11 +432,12 @@ export async function popularView() {
 
   try {
     const data = await tmdbApi.getPopularMovies();
+    const movies = scoreMovies(data.results);
 
     app.innerHTML = `
             <h1 class="page-title">🔥 Films Populaires</h1>
             <div class="movies-grid">
-                ${data.results.map((movie) => createMovieCard(movie)).join("")}
+                ${movies.map((movie) => createMovieCard(movie)).join("")}
             </div>
         `;
 
@@ -503,41 +466,12 @@ export async function discoverView() {
       const genresData = await tmdbApi.getGenres();
       filterState.setGenres(genresData.genres);
     }
-    
+
     const genres = filterState.getGenres();
-    
-    let cachedMovies = [];
-    let totalResults = 0;
 
-    // Fonction pour afficher les films tries
-    const renderMovies = () => {
-      const resultsContainer = document.getElementById('discover-results');
-      if (!resultsContainer) return;
-
-      if (cachedMovies.length === 0) {
-        resultsContainer.innerHTML = createNoResultsMessage();
-        const clearBtn = document.getElementById('clear-filters-btn');
-        if (clearBtn) {
-          clearBtn.addEventListener('click', () => {
-            filterState.resetFilters();
-          });
-        }
-        return;
-      }
-
-      const rankedMovies = rankMoviesByWeights(cachedMovies);
-      resultsContainer.innerHTML = `
-        <p class="results-count">${totalResults} film(s) trouvé(s)</p>
-        <div class="movies-grid">
-          ${rankedMovies.map((movie) => createMovieCard(movie)).join("")}
-        </div>
-      `;
-      addMovieCardListeners();
-    };
-
-    // Fonction pour charger les films depuis l'API puis reafficher
+    // Fonction pour charger et afficher les films
     const loadMovies = async () => {
-      const resultsContainer = document.getElementById('discover-results');
+      const resultsContainer = document.getElementById("discover-results");
       if (resultsContainer) {
         resultsContainer.innerHTML = `
           <div class="loading">
@@ -545,17 +479,36 @@ export async function discoverView() {
           </div>
         `;
       }
-      
+
       try {
         const apiParams = {
           sortBy: "popularity.desc",
-          ...filterState.toApiParams()
+          ...filterState.toApiParams(),
         };
-        
+
         const data = await tmdbApi.discoverMovies(apiParams);
-        cachedMovies = data.results || [];
-        totalResults = data.total_results || cachedMovies.length;
-        renderMovies();
+        const scoredMovies = scoreMovies(data.results);
+
+        if (resultsContainer) {
+          if (data.results.length === 0) {
+            resultsContainer.innerHTML = createNoResultsMessage();
+            // Réattacher l'écouteur du bouton clear
+            const clearBtn = document.getElementById("clear-filters-btn");
+            if (clearBtn) {
+              clearBtn.addEventListener("click", () => {
+                filterState.resetFilters();
+              });
+            }
+          } else {
+            resultsContainer.innerHTML = `
+              <p class="results-count">${data.total_results} film(s) trouvé(s) — triés par score personnalisé</p>
+              <div class="movies-grid">
+                ${scoredMovies.map((movie) => createMovieCard(movie)).join("")}
+              </div>
+            `;
+            addMovieCardListeners();
+          }
+        }
       } catch (error) {
         if (resultsContainer) {
           resultsContainer.innerHTML = `
@@ -571,15 +524,15 @@ export async function discoverView() {
       ${createFiltersPanel(genres)}
       <div id="discover-results"></div>
     `;
-    
+
     // Initialiser les filtres et charger les films
     initFilterListeners(async (_state, meta = {}) => {
       updateWeightIndicators();
 
       // Mettre à jour l'affichage des filtres actifs
-      const filtersPanel = document.querySelector('.filters-panel');
+      const filtersPanel = document.querySelector(".filters-panel");
       if (filtersPanel) {
-        const activeDiv = filtersPanel.querySelector('.filters-panel__active');
+        const activeDiv = filtersPanel.querySelector(".filters-panel__active");
         if (filterState.hasActiveFilters()) {
           if (activeDiv) {
             activeDiv.innerHTML = `
@@ -588,32 +541,28 @@ export async function discoverView() {
               </span>
             `;
           } else {
-            filtersPanel.insertAdjacentHTML('beforeend', `
+            filtersPanel.insertAdjacentHTML(
+              "beforeend",
+              `
               <div class="filters-panel__active">
                 <span class="filters-panel__count">
                   ${filterState.getActiveFiltersCount()} filtre(s) actif(s)
                 </span>
               </div>
-            `);
+            `,
+            );
           }
         } else if (activeDiv) {
           activeDiv.remove();
         }
       }
-      
-      // Recharger via API seulement pour les filtres classiques.
-      // Les poids reclassement localement sans requete reseau.
-      if (meta.changedKey && meta.changedKey.startsWith("weight")) {
-        renderMovies();
-        return;
-      }
 
+      // Recharger les films avec les nouveaux filtres
       await loadMovies();
     });
-    
+
     // Charger les films initiaux
     await loadMovies();
-    
   } catch (error) {
     showError(error.message);
   }
@@ -714,6 +663,7 @@ export async function movieDetailView(movieId) {
     const releaseDate = movie.release_date
       ? new Date(movie.release_date).toLocaleDateString("fr-FR")
       : "Date inconnue";
+    const favorite = isFavorite(movie.id);
 
     app.innerHTML = `
             <a href="#/" style="display: inline-block; margin-bottom: 2rem; color: #01b4e4; text-decoration: none;">
@@ -730,7 +680,18 @@ export async function movieDetailView(movieId) {
                 </div>
                 
                 <div class="movie-detail__content">
-                    <h1>${movie.title}</h1>
+                    <div class="movie-detail__header">
+                        <h1>${movie.title}</h1>
+                        <button
+                            type="button"
+                            class="movie-detail__favorite ${favorite ? "is-favorite" : ""}"
+                            aria-pressed="${favorite ? "true" : "false"}"
+                            aria-label="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
+                            title="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
+                        >
+                            ❤
+                        </button>
+                    </div>
                     ${movie.tagline ? `<p class="movie-detail__tagline">"${movie.tagline}"</p>` : ""}
                     
                     <div class="movie-detail__meta">
@@ -770,6 +731,24 @@ export async function movieDetailView(movieId) {
                 </div>
             </div>
         `;
+
+    const favoriteButton = document.querySelector(".movie-detail__favorite");
+    if (favoriteButton) {
+      favoriteButton.addEventListener("click", () => {
+        const result = toggleFavorite(movie);
+        const isFav = result.isFavorite;
+        favoriteButton.classList.toggle("is-favorite", isFav);
+        favoriteButton.setAttribute("aria-pressed", isFav ? "true" : "false");
+        favoriteButton.setAttribute(
+          "aria-label",
+          isFav ? "Retirer des favoris" : "Ajouter aux favoris",
+        );
+        favoriteButton.setAttribute(
+          "title",
+          isFav ? "Retirer des favoris" : "Ajouter aux favoris",
+        );
+      });
+    }
   } catch (error) {
     showError(error.message);
   }
@@ -786,4 +765,29 @@ export function notFoundView() {
             <a href="#/" style="color: #01b4e4;">Retour à l'accueil</a>
         </div>
     `;
+}
+
+/**
+ * Vue: Mes recommandations (favoris)
+ */
+export function favoritesView() {
+  const favorites = scoreMovies(getFavorites());
+
+  if (favorites.length === 0) {
+    app.innerHTML = `
+      <h1 class="page-title">💡 Mes recommandations</h1>
+      ${createNoFavoritesMessage()}
+    `;
+    return;
+  }
+
+  app.innerHTML = `
+    <h1 class="page-title">💡 Mes recommandations</h1>
+    <p class="results-count">${favorites.length} film(s) en favori</p>
+    <div class="movies-grid" data-view="favorites">
+      ${favorites.map((movie) => createMovieCard(movie)).join("")}
+    </div>
+  `;
+
+  addMovieCardListeners();
 }

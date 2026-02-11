@@ -9,6 +9,7 @@ import {
   popularView,
   discoverView,
   searchView,
+  favoritesView,
   movieDetailView,
   notFoundView,
 } from "./views.js";
@@ -20,6 +21,7 @@ router
   .addRoute("/popular", popularView)
   .addRoute("/discover", discoverView)
   .addRoute("/search", searchView)
+  .addRoute("/favorites", favoritesView)
   .addRoute("/movie/:id", movieDetailView)
   .setDefaultRoute(notFoundView);
 
