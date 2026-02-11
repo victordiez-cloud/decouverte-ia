@@ -5,6 +5,7 @@
 
 import tmdbApi from "./api.js";
 import { getImageUrl, isApiKeyConfigured } from "./config.js";
+import filterState from "./filterState.js";
 
 // Élément principal où injecter le contenu
 const app = document.getElementById("app");
@@ -75,6 +76,185 @@ function addMovieCardListeners() {
 }
 
 /**
+ * Générer les années pour le select (de l'année actuelle à 1900)
+ * @returns {string} Options HTML
+ */
+function generateYearOptions() {
+  const currentYear = new Date().getFullYear();
+  let options = '<option value="">Toutes les années</option>';
+  for (let year = currentYear; year >= 1900; year--) {
+    options += `<option value="${year}">${year}</option>`;
+  }
+  return options;
+}
+
+/**
+ * Générer les options de note
+ * @returns {string} Options HTML
+ */
+function generateRatingOptions() {
+  let options = '<option value="">Toutes les notes</option>';
+  for (let rating = 9; rating >= 1; rating--) {
+    options += `<option value="${rating}">${rating}+ ⭐</option>`;
+  }
+  return options;
+}
+
+/**
+ * Générer le HTML du panneau de filtres
+ * @param {Array} genres - Liste des genres
+ * @returns {string} HTML du panneau
+ */
+function createFiltersPanel(genres) {
+  const state = filterState.getState();
+  const languages = filterState.getLanguages();
+  
+  return `
+    <div class="filters-panel">
+      <div class="filters-panel__header">
+        <h3 class="filters-panel__title">🎛️ Filtres</h3>
+        <button type="button" class="filters-panel__reset" id="reset-filters">
+          Réinitialiser
+        </button>
+      </div>
+      
+      <div class="filters-panel__grid">
+        <!-- Filtre par genre -->
+        <div class="filter-group">
+          <label for="filter-genre" class="filter-group__label">Genre</label>
+          <select id="filter-genre" class="filter-group__select">
+            <option value="">Tous les genres</option>
+            ${genres.map(g => `
+              <option value="${g.id}" ${state.genre == g.id ? 'selected' : ''}>
+                ${g.name}
+              </option>
+            `).join('')}
+          </select>
+        </div>
+        
+        <!-- Filtre par année minimum -->
+        <div class="filter-group">
+          <label for="filter-year" class="filter-group__label">Année minimum</label>
+          <select id="filter-year" class="filter-group__select">
+            ${generateYearOptions()}
+          </select>
+        </div>
+        
+        <!-- Filtre par note minimum -->
+        <div class="filter-group">
+          <label for="filter-rating" class="filter-group__label">Note minimum</label>
+          <select id="filter-rating" class="filter-group__select">
+            ${generateRatingOptions()}
+          </select>
+        </div>
+        
+        <!-- Filtre par langue -->
+        <div class="filter-group">
+          <label for="filter-language" class="filter-group__label">Langue originale</label>
+          <select id="filter-language" class="filter-group__select">
+            <option value="">Toutes les langues</option>
+            ${languages.map(l => `
+              <option value="${l.iso_639_1}" ${state.language === l.iso_639_1 ? 'selected' : ''}>
+                ${l.name}
+              </option>
+            `).join('')}
+          </select>
+        </div>
+      </div>
+      
+      ${filterState.hasActiveFilters() ? `
+        <div class="filters-panel__active">
+          <span class="filters-panel__count">
+            ${filterState.getActiveFiltersCount()} filtre(s) actif(s)
+          </span>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Afficher un message quand aucun film n'est trouvé
+ * @returns {string} HTML du message
+ */
+function createNoResultsMessage() {
+  return `
+    <div class="no-results">
+      <div class="no-results__icon">🎬</div>
+      <h3 class="no-results__title">Aucun film trouvé</h3>
+      <p class="no-results__text">
+        Aucun film ne correspond à vos critères de recherche.
+        <br>Essayez de modifier vos filtres.
+      </p>
+      <button type="button" class="no-results__button" id="clear-filters-btn">
+        Effacer les filtres
+      </button>
+    </div>
+  `;
+}
+
+/**
+ * Initialiser les écouteurs d'événements des filtres
+ * @param {Function} onFilterChange - Callback appelé lors d'un changement
+ */
+function initFilterListeners(onFilterChange) {
+  // Genre
+  const genreSelect = document.getElementById('filter-genre');
+  if (genreSelect) {
+    genreSelect.value = filterState.getState().genre;
+    genreSelect.addEventListener('change', (e) => {
+      filterState.setFilter('genre', e.target.value);
+    });
+  }
+  
+  // Année
+  const yearSelect = document.getElementById('filter-year');
+  if (yearSelect) {
+    yearSelect.value = filterState.getState().yearMin;
+    yearSelect.addEventListener('change', (e) => {
+      filterState.setFilter('yearMin', e.target.value);
+    });
+  }
+  
+  // Note
+  const ratingSelect = document.getElementById('filter-rating');
+  if (ratingSelect) {
+    ratingSelect.value = filterState.getState().ratingMin;
+    ratingSelect.addEventListener('change', (e) => {
+      filterState.setFilter('ratingMin', e.target.value);
+    });
+  }
+  
+  // Langue
+  const languageSelect = document.getElementById('filter-language');
+  if (languageSelect) {
+    languageSelect.value = filterState.getState().language;
+    languageSelect.addEventListener('change', (e) => {
+      filterState.setFilter('language', e.target.value);
+    });
+  }
+  
+  // Bouton reset
+  const resetBtn = document.getElementById('reset-filters');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      filterState.resetFilters();
+    });
+  }
+  
+  // Bouton clear dans le message "no results"
+  const clearBtn = document.getElementById('clear-filters-btn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      filterState.resetFilters();
+    });
+  }
+  
+  // S'abonner aux changements de filtres
+  return filterState.subscribe(onFilterChange);
+}
+
+/**
  * Vue: Page d'accueil
  */
 export async function homeView() {
@@ -141,7 +321,7 @@ export async function popularView() {
 }
 
 /**
- * Vue: Découverte de films
+ * Vue: Découverte de films avec filtres
  */
 export async function discoverView() {
   if (!isApiKeyConfigured()) {
@@ -154,22 +334,103 @@ export async function discoverView() {
   showLoading();
 
   try {
-    const data = await tmdbApi.discoverMovies({
-      sortBy: "popularity.desc",
-      minRating: 7,
-    });
-
-    app.innerHTML = `
-            <h1 class="page-title">🎯 Découverte</h1>
-            <p style="text-align: center; margin-bottom: 2rem; color: #666;">
-                Films bien notés triés par popularité
-            </p>
-            <div class="movies-grid">
-                ${data.results.map((movie) => createMovieCard(movie)).join("")}
-            </div>
+    // Charger les genres si pas encore fait
+    if (filterState.getGenres().length === 0) {
+      const genresData = await tmdbApi.getGenres();
+      filterState.setGenres(genresData.genres);
+    }
+    
+    const genres = filterState.getGenres();
+    
+    // Fonction pour charger et afficher les films
+    const loadMovies = async () => {
+      const resultsContainer = document.getElementById('discover-results');
+      if (resultsContainer) {
+        resultsContainer.innerHTML = `
+          <div class="loading">
+            <div class="loading__spinner"></div>
+          </div>
         `;
+      }
+      
+      try {
+        const apiParams = {
+          sortBy: "popularity.desc",
+          ...filterState.toApiParams()
+        };
+        
+        const data = await tmdbApi.discoverMovies(apiParams);
+        
+        if (resultsContainer) {
+          if (data.results.length === 0) {
+            resultsContainer.innerHTML = createNoResultsMessage();
+            // Réattacher l'écouteur du bouton clear
+            const clearBtn = document.getElementById('clear-filters-btn');
+            if (clearBtn) {
+              clearBtn.addEventListener('click', () => {
+                filterState.resetFilters();
+              });
+            }
+          } else {
+            resultsContainer.innerHTML = `
+              <p class="results-count">${data.total_results} film(s) trouvé(s)</p>
+              <div class="movies-grid">
+                ${data.results.map((movie) => createMovieCard(movie)).join("")}
+              </div>
+            `;
+            addMovieCardListeners();
+          }
+        }
+      } catch (error) {
+        if (resultsContainer) {
+          resultsContainer.innerHTML = `
+            <div class="error-message">${error.message}</div>
+          `;
+        }
+      }
+    };
 
-    addMovieCardListeners();
+    // Afficher la structure de la page
+    app.innerHTML = `
+      <h1 class="page-title">🎯 Découverte</h1>
+      ${createFiltersPanel(genres)}
+      <div id="discover-results"></div>
+    `;
+    
+    // Initialiser les filtres et charger les films
+    initFilterListeners(async () => {
+      // Mettre à jour l'affichage des filtres actifs
+      const filtersPanel = document.querySelector('.filters-panel');
+      if (filtersPanel) {
+        const activeDiv = filtersPanel.querySelector('.filters-panel__active');
+        if (filterState.hasActiveFilters()) {
+          if (activeDiv) {
+            activeDiv.innerHTML = `
+              <span class="filters-panel__count">
+                ${filterState.getActiveFiltersCount()} filtre(s) actif(s)
+              </span>
+            `;
+          } else {
+            filtersPanel.insertAdjacentHTML('beforeend', `
+              <div class="filters-panel__active">
+                <span class="filters-panel__count">
+                  ${filterState.getActiveFiltersCount()} filtre(s) actif(s)
+                </span>
+              </div>
+            `);
+          }
+        } else if (activeDiv) {
+          activeDiv.remove();
+        }
+      }
+      
+      // Recharger les films avec les nouveaux filtres
+      await loadMovies();
+    });
+    
+    // Charger les films initiaux
+    await loadMovies();
+    
   } catch (error) {
     showError(error.message);
   }

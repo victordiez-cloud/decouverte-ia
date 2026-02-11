@@ -79,9 +79,18 @@ class TMDBApi {
       "primary_release_date.gte": options.releaseDateFrom,
       "primary_release_date.lte": options.releaseDateTo,
       year: options.year,
+      with_original_language: options.language,
     };
 
     return this.fetchData("/discover/movie", params);
+  }
+
+  /**
+   * Récupérer la liste des langues
+   * @returns {Promise<Object>}
+   */
+  async getLanguages() {
+    return this.fetchData("/configuration/languages");
   }
 
   /**
