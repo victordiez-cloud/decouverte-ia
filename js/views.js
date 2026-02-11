@@ -170,6 +170,20 @@ function generateRatingOptions() {
 }
 
 /**
+ * Convertir l'etat des sliders en poids de scoring
+ * @returns {{rating: number, popularity: number, recency: number, votes: number}}
+ */
+function getScoringWeights() {
+  const normalized = filterState.getNormalizedWeights();
+  return {
+    rating: normalized.rating,
+    popularity: normalized.popularity,
+    recency: normalized.recency,
+    votes: 0,
+  };
+}
+
+/**
  * Générer le HTML du panneau de filtres
  * @param {Array} genres - Liste des genres
  * @returns {string} HTML du panneau
@@ -177,6 +191,7 @@ function generateRatingOptions() {
 function createFiltersPanel(genres) {
   const state = filterState.getState();
   const languages = filterState.getLanguages();
+  const normalizedWeights = filterState.getNormalizedWeights();
 
   return `
     <div class="filters-panel">
@@ -238,6 +253,64 @@ function createFiltersPanel(genres) {
           </select>
         </div>
       </div>
+
+      <div class="weights-panel">
+        <h4 class="weights-panel__title">Pondération du classement</h4>
+
+        <div class="weight-control">
+          <div class="weight-control__header">
+            <label for="weight-popularity" class="filter-group__label">Popularité</label>
+            <span id="weight-popularity-value" class="weight-control__value">${state.weightPopularity}</span>
+          </div>
+          <input
+            id="weight-popularity"
+            class="weight-control__slider"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value="${state.weightPopularity}"
+          >
+        </div>
+
+        <div class="weight-control">
+          <div class="weight-control__header">
+            <label for="weight-rating" class="filter-group__label">Note</label>
+            <span id="weight-rating-value" class="weight-control__value">${state.weightRating}</span>
+          </div>
+          <input
+            id="weight-rating"
+            class="weight-control__slider"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value="${state.weightRating}"
+          >
+        </div>
+
+        <div class="weight-control">
+          <div class="weight-control__header">
+            <label for="weight-recency" class="filter-group__label">Récence</label>
+            <span id="weight-recency-value" class="weight-control__value">${state.weightRecency}</span>
+          </div>
+          <input
+            id="weight-recency"
+            class="weight-control__slider"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value="${state.weightRecency}"
+          >
+        </div>
+
+        <p class="weights-panel__normalized" id="weights-normalized-display">
+          Normalisé: Popularité ${(normalizedWeights.popularity * 100).toFixed(0)}% •
+          Note ${(normalizedWeights.rating * 100).toFixed(0)}% •
+          Récence ${(normalizedWeights.recency * 100).toFixed(0)}%
+        </p>
+      </div>
       
       ${
         filterState.hasActiveFilters()
@@ -252,6 +325,31 @@ function createFiltersPanel(genres) {
       }
     </div>
   `;
+}
+
+/**
+ * Mettre a jour les valeurs visibles des sliders et les pourcentages normalises
+ */
+function updateWeightIndicators() {
+  const state = filterState.getState();
+  const normalized = filterState.getNormalizedWeights();
+
+  const popularityValue = document.getElementById("weight-popularity-value");
+  if (popularityValue) popularityValue.textContent = String(state.weightPopularity);
+
+  const ratingValue = document.getElementById("weight-rating-value");
+  if (ratingValue) ratingValue.textContent = String(state.weightRating);
+
+  const recencyValue = document.getElementById("weight-recency-value");
+  if (recencyValue) recencyValue.textContent = String(state.weightRecency);
+
+  const normalizedDisplay = document.getElementById("weights-normalized-display");
+  if (normalizedDisplay) {
+    normalizedDisplay.textContent =
+      `Normalisé: Popularité ${(normalized.popularity * 100).toFixed(0)}% • ` +
+      `Note ${(normalized.rating * 100).toFixed(0)}% • ` +
+      `Récence ${(normalized.recency * 100).toFixed(0)}%`;
+  }
 }
 
 /**
@@ -469,7 +567,35 @@ export async function discoverView() {
 
     const genres = filterState.getGenres();
 
-    // Fonction pour charger et afficher les films
+    let cachedMovies = [];
+    let totalResults = 0;
+
+    const renderMovies = () => {
+      const resultsContainer = document.getElementById("discover-results");
+      if (!resultsContainer) return;
+
+      if (cachedMovies.length === 0) {
+        resultsContainer.innerHTML = createNoResultsMessage();
+        const clearBtn = document.getElementById("clear-filters-btn");
+        if (clearBtn) {
+          clearBtn.addEventListener("click", () => {
+            filterState.resetFilters();
+          });
+        }
+        return;
+      }
+
+      const scoredMovies = scoreMovies(cachedMovies, getScoringWeights());
+      resultsContainer.innerHTML = `
+        <p class="results-count">${totalResults} film(s) trouvé(s) — triés par score personnalisé</p>
+        <div class="movies-grid">
+          ${scoredMovies.map((movie) => createMovieCard(movie)).join("")}
+        </div>
+      `;
+      addMovieCardListeners();
+    };
+
+    // Fonction pour charger depuis l'API puis afficher les films
     const loadMovies = async () => {
       const resultsContainer = document.getElementById("discover-results");
       if (resultsContainer) {
@@ -487,27 +613,11 @@ export async function discoverView() {
         };
 
         const data = await tmdbApi.discoverMovies(apiParams);
-        const scoredMovies = scoreMovies(data.results);
+        cachedMovies = data.results || [];
+        totalResults = data.total_results || cachedMovies.length;
 
         if (resultsContainer) {
-          if (data.results.length === 0) {
-            resultsContainer.innerHTML = createNoResultsMessage();
-            // Réattacher l'écouteur du bouton clear
-            const clearBtn = document.getElementById("clear-filters-btn");
-            if (clearBtn) {
-              clearBtn.addEventListener("click", () => {
-                filterState.resetFilters();
-              });
-            }
-          } else {
-            resultsContainer.innerHTML = `
-              <p class="results-count">${data.total_results} film(s) trouvé(s) — triés par score personnalisé</p>
-              <div class="movies-grid">
-                ${scoredMovies.map((movie) => createMovieCard(movie)).join("")}
-              </div>
-            `;
-            addMovieCardListeners();
-          }
+          renderMovies();
         }
       } catch (error) {
         if (resultsContainer) {
@@ -557,7 +667,12 @@ export async function discoverView() {
         }
       }
 
-      // Recharger les films avec les nouveaux filtres
+      if (meta.changedKey && meta.changedKey.startsWith("weight")) {
+        renderMovies();
+        return;
+      }
+
+      // Recharger les films avec les filtres API
       await loadMovies();
     });
 
