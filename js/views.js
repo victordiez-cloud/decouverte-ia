@@ -6,6 +6,13 @@
 import tmdbApi from "./api.js";
 import { getImageUrl, isApiKeyConfigured } from "./config.js";
 import filterState from "./filterState.js";
+import { scoreMovies } from "./scoring.js";
+import {
+  getFavorites,
+  isFavorite,
+  toggleFavorite,
+  toFavoriteMovie,
+} from "./favorites.js";
 
 // Élément principal où injecter le contenu
 const app = document.getElementById("app");
@@ -45,6 +52,10 @@ function createMovieCard(movie) {
     ? new Date(movie.release_date).toLocaleDateString("fr-FR")
     : "Date inconnue";
   const rating = movie.vote_average ? movie.vote_average.toFixed(1) : "N/A";
+  const favorite = isFavorite(movie.id);
+  const favoritePayload = encodeURIComponent(
+    JSON.stringify(toFavoriteMovie(movie)),
+  );
 
   return `
         <article class="movie-card" data-movie-id="${movie.id}">
@@ -54,6 +65,16 @@ function createMovieCard(movie) {
                 class="movie-card__poster"
                 loading="lazy"
             >
+            <button
+                type="button"
+                class="movie-card__favorite ${favorite ? "is-favorite" : ""}"
+                aria-pressed="${favorite ? "true" : "false"}"
+                aria-label="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
+                title="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
+                data-movie="${favoritePayload}"
+            >
+                ❤
+            </button>
             <div class="movie-card__info">
                 <h3 class="movie-card__title" title="${movie.title}">${movie.title}</h3>
                 <p class="movie-card__date">${releaseDate}</p>
@@ -71,6 +92,54 @@ function addMovieCardListeners() {
     card.addEventListener("click", () => {
       const movieId = card.dataset.movieId;
       window.location.hash = `/movie/${movieId}`;
+    });
+  });
+
+  document.querySelectorAll(".movie-card__favorite").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const encodedMovie = button.dataset.movie;
+      if (!encodedMovie) return;
+
+      let moviePayload = null;
+      try {
+        moviePayload = JSON.parse(decodeURIComponent(encodedMovie));
+      } catch (error) {
+        moviePayload = null;
+      }
+
+      if (!moviePayload) return;
+
+      const result = toggleFavorite(moviePayload);
+      const isFav = result.isFavorite;
+
+      button.classList.toggle("is-favorite", isFav);
+      button.setAttribute("aria-pressed", isFav ? "true" : "false");
+      button.setAttribute(
+        "aria-label",
+        isFav ? "Retirer des favoris" : "Ajouter aux favoris",
+      );
+      button.setAttribute(
+        "title",
+        isFav ? "Retirer des favoris" : "Ajouter aux favoris",
+      );
+
+      const favoritesContainer = button.closest('[data-view="favorites"]');
+      if (!isFav && favoritesContainer) {
+        const card = button.closest(".movie-card");
+        if (card) {
+          card.remove();
+        }
+        const remaining = favoritesContainer.querySelectorAll(".movie-card")
+          .length;
+        const countEl = document.querySelector(".results-count");
+        if (countEl) {
+          countEl.textContent = `${remaining} film(s) en favori`;
+        }
+        if (remaining === 0) {
+          favoritesView();
+        }
+      }
     });
   });
 }
@@ -194,6 +263,24 @@ function createNoResultsMessage() {
 }
 
 /**
+ * Afficher un message quand aucun favori n'est enregistré
+ * @returns {string} HTML du message
+ */
+function createNoFavoritesMessage() {
+  return `
+    <div class="no-results">
+      <div class="no-results__icon">💡</div>
+      <h3 class="no-results__title">Aucune recommandation pour le moment</h3>
+      <p class="no-results__text">
+        Ajoutez des films à vos favoris pour les retrouver ici.
+        <br>Explorez la section Découverte ou Populaires.
+      </p>
+      <a href="#/discover" class="no-results__button">Découvrir des films</a>
+    </div>
+  `;
+}
+
+/**
  * Initialiser les écouteurs d'événements des filtres
  * @param {Function} onFilterChange - Callback appelé lors d'un changement
  */
@@ -269,7 +356,7 @@ export async function homeView() {
 
   try {
     const data = await tmdbApi.getPopularMovies();
-    const movies = data.results.slice(0, 8); // Limiter à 8 films pour l'accueil
+    const movies = scoreMovies(data.results).slice(0, 8); // Limiter à 8 films pour l'accueil
 
     app.innerHTML = `
             <section class="hero">
@@ -306,11 +393,12 @@ export async function popularView() {
 
   try {
     const data = await tmdbApi.getPopularMovies();
+    const movies = scoreMovies(data.results);
 
     app.innerHTML = `
             <h1 class="page-title">🔥 Films Populaires</h1>
             <div class="movies-grid">
-                ${data.results.map((movie) => createMovieCard(movie)).join("")}
+                ${movies.map((movie) => createMovieCard(movie)).join("")}
             </div>
         `;
 
@@ -360,6 +448,7 @@ export async function discoverView() {
         };
         
         const data = await tmdbApi.discoverMovies(apiParams);
+        const scoredMovies = scoreMovies(data.results);
         
         if (resultsContainer) {
           if (data.results.length === 0) {
@@ -373,9 +462,9 @@ export async function discoverView() {
             }
           } else {
             resultsContainer.innerHTML = `
-              <p class="results-count">${data.total_results} film(s) trouvé(s)</p>
+              <p class="results-count">${data.total_results} film(s) trouvé(s) — triés par score personnalisé</p>
               <div class="movies-grid">
-                ${data.results.map((movie) => createMovieCard(movie)).join("")}
+                ${scoredMovies.map((movie) => createMovieCard(movie)).join("")}
               </div>
             `;
             addMovieCardListeners();
@@ -531,6 +620,7 @@ export async function movieDetailView(movieId) {
     const releaseDate = movie.release_date
       ? new Date(movie.release_date).toLocaleDateString("fr-FR")
       : "Date inconnue";
+    const favorite = isFavorite(movie.id);
 
     app.innerHTML = `
             <a href="#/" style="display: inline-block; margin-bottom: 2rem; color: #01b4e4; text-decoration: none;">
@@ -547,7 +637,18 @@ export async function movieDetailView(movieId) {
                 </div>
                 
                 <div class="movie-detail__content">
-                    <h1>${movie.title}</h1>
+                    <div class="movie-detail__header">
+                        <h1>${movie.title}</h1>
+                        <button
+                            type="button"
+                            class="movie-detail__favorite ${favorite ? "is-favorite" : ""}"
+                            aria-pressed="${favorite ? "true" : "false"}"
+                            aria-label="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
+                            title="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
+                        >
+                            ❤
+                        </button>
+                    </div>
                     ${movie.tagline ? `<p class="movie-detail__tagline">"${movie.tagline}"</p>` : ""}
                     
                     <div class="movie-detail__meta">
@@ -587,6 +688,24 @@ export async function movieDetailView(movieId) {
                 </div>
             </div>
         `;
+
+    const favoriteButton = document.querySelector(".movie-detail__favorite");
+    if (favoriteButton) {
+      favoriteButton.addEventListener("click", () => {
+        const result = toggleFavorite(movie);
+        const isFav = result.isFavorite;
+        favoriteButton.classList.toggle("is-favorite", isFav);
+        favoriteButton.setAttribute("aria-pressed", isFav ? "true" : "false");
+        favoriteButton.setAttribute(
+          "aria-label",
+          isFav ? "Retirer des favoris" : "Ajouter aux favoris",
+        );
+        favoriteButton.setAttribute(
+          "title",
+          isFav ? "Retirer des favoris" : "Ajouter aux favoris",
+        );
+      });
+    }
   } catch (error) {
     showError(error.message);
   }
@@ -603,4 +722,29 @@ export function notFoundView() {
             <a href="#/" style="color: #01b4e4;">Retour à l'accueil</a>
         </div>
     `;
+}
+
+/**
+ * Vue: Mes recommandations (favoris)
+ */
+export function favoritesView() {
+  const favorites = scoreMovies(getFavorites());
+
+  if (favorites.length === 0) {
+    app.innerHTML = `
+      <h1 class="page-title">💡 Mes recommandations</h1>
+      ${createNoFavoritesMessage()}
+    `;
+    return;
+  }
+
+  app.innerHTML = `
+    <h1 class="page-title">💡 Mes recommandations</h1>
+    <p class="results-count">${favorites.length} film(s) en favori</p>
+    <div class="movies-grid" data-view="favorites">
+      ${favorites.map((movie) => createMovieCard(movie)).join("")}
+    </div>
+  `;
+
+  addMovieCardListeners();
 }
