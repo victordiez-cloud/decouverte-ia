@@ -1,0 +1,27 @@
+{
+  "name": "tmdb-explorer",
+  "version": "1.0.0",
+  "description": "Application de découverte de films utilisant l'API TMDB",
+  "main": "js/app.js",
+  "scripts": {
+    "sass": "sass scss/style.scss css/style.css",
+    "sass:watch": "sass --watch scss/style.scss css/style.css",
+    "start": "npm run sass && npx live-server --port=3000",
+    "dev": "concurrently \"npm run sass:watch\" \"npx live-server --port=3000\"",
+    "build": "sass scss/style.scss css/style.css --style=compressed"
+  },
+  "keywords": [
+    "tmdb",
+    "movies",
+    "api",
+    "javascript",
+    "sass"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "sass": "^1.69.0",
+    "concurrently": "^8.2.0",
+    "live-server": "^1.2.2"
+  }
+}
