@@ -394,6 +394,48 @@ body {
   }
 }
 
+.weights-panel {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #eee;
+
+  &__title {
+    font-size: 1rem;
+    color: $dark-bg;
+    margin-bottom: 1rem;
+  }
+
+  &__normalized {
+    margin-top: 1rem;
+    font-size: 0.875rem;
+    color: #555;
+  }
+}
+
+.weight-control {
+  margin-bottom: 0.875rem;
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.35rem;
+  }
+
+  &__value {
+    min-width: 2.5rem;
+    text-align: right;
+    font-weight: 700;
+    color: $dark-bg;
+  }
+
+  &__slider {
+    width: 100%;
+    accent-color: $primary-color;
+    cursor: pointer;
+  }
+}
+
 // Filter Group
 .filter-group {
   display: flex;
