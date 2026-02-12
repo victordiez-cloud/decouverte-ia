@@ -1,6 +1,7 @@
 # 🎬 TMDB Explorer
 
 Application web de découverte de films utilisant l'API The Movie Database (TMDB).
+Interface SPA simple et rapide pour parcourir, filtrer et recommander des films.
 
 ## 📋 Prérequis
 
@@ -40,6 +41,14 @@ npm start
 
 L'application sera accessible sur `http://localhost:3000`
 
+## 🧱 Stack
+
+- HTML5
+- JavaScript (ES Modules)
+- Sass (SCSS)
+- TMDB API
+- live-server (dev)
+
 ## 📁 Structure du projet
 
 ```
@@ -53,7 +62,9 @@ L'application sera accessible sur `http://localhost:3000`
 │   ├── api.js          # Service API TMDB
 │   ├── config.js       # Configuration (clé API)
 │   ├── router.js       # Système de routing SPA
-│   └── views.js        # Vues/Pages de l'application
+│   ├── views.js        # Vues/Pages de l'application
+│   ├── scoring.js      # Scoring personnalisé
+│   └── favorites.js    # Favoris persistants (localStorage)
 ├── package.json
 └── README.md
 ```
@@ -102,6 +113,8 @@ git branch -d feature/ma-fonctionnalite
 | `npm run dev` | Mode développement avec hot reload |
 | `npm run build` | Build de production (CSS minifié) |
 
+Aucun script `lint` ou `test` n'est configuré pour ce projet.
+
 ## 📚 Endpoints API utilisés
 
 | Endpoint | Description |
@@ -118,9 +131,21 @@ git branch -d feature/ma-fonctionnalite
 - ✅ Découverte de films
 - ✅ Recherche de films
 - ✅ Page de détail d'un film
+- ✅ Scoring personnalisé (pondération)
+- ✅ Bouton "Surprise Me" sur la Découverte
+- ✅ Favoris persistants + page "Mes recommandations"
 - ✅ Routing SPA (Single Page Application)
 - ✅ Design responsive
 - ✅ Lazy loading des images
+
+## 🔐 Variables d'environnement
+
+Aucune variable d'environnement. La clé API est définie dans `js/config.js`.
+
+## ⚠️ Limitations connues
+
+- La clé API est visible côté client : utilisez une clé dédiée à ce projet.
+- Le quota et les limites de rate limit dépendent de TMDB.
 
 ## 👥 Auteurs
 
