@@ -546,6 +546,46 @@ body {
   font-size: 0.9375rem;
 }
 
+.results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+
+  .results-count {
+    margin-bottom: 0;
+    text-align: left;
+  }
+}
+
+.surprise-button {
+  background: linear-gradient(135deg, $primary-color, $secondary-color);
+  color: $text-light;
+  border: none;
+  padding: 0.6rem 1.4rem;
+  border-radius: $border-radius;
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  transition: $transition;
+  box-shadow: 0 8px 18px rgba($dark-bg, 0.18);
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 22px rgba($dark-bg, 0.25);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+}
+
 // No Results Message
 .no-results {
   text-align: center;
