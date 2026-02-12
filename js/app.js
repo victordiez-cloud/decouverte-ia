@@ -23,6 +23,7 @@ router
   .addRoute("/search", searchView)
   .addRoute("/favorites", favoritesView)
   .addRoute("/movie/:id", movieDetailView)
+  .addRoute("/compare", () => import("./views.js").then(m => m.compareView()))
   .setDefaultRoute(notFoundView);
 
 // Message de bienvenue dans la console

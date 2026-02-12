@@ -906,3 +906,200 @@ export function favoritesView() {
 
   addMovieCardListeners();
 }
+
+// Etat local pour la comparaison (confiné à la vue Comparer)
+let compareSelection = [];
+
+function formatDateFR(dateStr) {
+  return dateStr ? new Date(dateStr).toLocaleDateString("fr-FR") : "Date inconnue";
+}
+
+function compareTableHTML(a, b) {
+  return `
+    <table class="compare__table" role="table" aria-label="Tableau comparatif des films sélectionnés">
+      <thead>
+        <tr>
+          <th scope="col">Critère</th>
+          <th scope="col">${a.title}</th>
+          <th scope="col">${b.title}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td scope="row">Note</td>
+          <td><span class="compare__badge">⭐ ${a.vote_average?.toFixed?.(1) ?? "N/A"}</span></td>
+          <td><span class="compare__badge">⭐ ${b.vote_average?.toFixed?.(1) ?? "N/A"}</span></td>
+        </tr>
+        <tr>
+          <td scope="row">Popularité</td>
+          <td>${a.popularity ?? "N/A"}</td>
+          <td>${b.popularity ?? "N/A"}</td>
+        </tr>
+        <tr>
+          <td scope="row">Date</td>
+          <td>${formatDateFR(a.release_date)}</td>
+          <td>${formatDateFR(b.release_date)}</td>
+        </tr>
+        <tr>
+          <td scope="row">Nombre de votes</td>
+          <td>${a.vote_count ?? "N/A"}</td>
+          <td>${b.vote_count ?? "N/A"}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+function renderCompareViewPanel() {
+  const panel = document.getElementById("compare-panel-local");
+  if (!panel) return;
+
+  const header = `
+    <div class="compare__header">
+      <h2 class="compare__title">Comparer des films</h2>
+      <div class="compare__actions">
+        <span class="compare__count">${compareSelection.length}/2 sélection(s)</span>
+        <button type="button" class="compare__clear" id="compare-clear">Vider</button>
+      </div>
+    </div>
+  `;
+
+  let content = `
+    <div class="compare__placeholder">
+      Sélectionnez deux films depuis la grille de droite pour comparer.
+    </div>
+  `;
+
+  if (compareSelection.length === 1) {
+    const a = compareSelection[0];
+    content = `
+      <div class="compare__slots">
+        <div class="compare__slot">
+          <div class="compare__chip">${a.title}<button class="chip__remove" data-id="${a.id}" aria-label="Retirer">✕</button></div>
+        </div>
+        <div class="compare__slot compare__slot--empty">Sélectionnez un second film…</div>
+      </div>
+    `;
+  }
+
+  if (compareSelection.length === 2) {
+    const [a, b] = compareSelection;
+    content = `
+      <div class="compare__chips">
+        <div class="compare__chip">${a.title}<button class="chip__remove" data-id="${a.id}" aria-label="Retirer">✕</button></div>
+        <div class="compare__chip">${b.title}<button class="chip__remove" data-id="${b.id}" aria-label="Retirer">✕</button></div>
+      </div>
+      ${compareTableHTML(a, b)}
+    `;
+  }
+
+  panel.innerHTML = header + content;
+
+  const clearBtn = document.getElementById("compare-clear");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      compareSelection = [];
+      renderCompareViewPanel();
+      document.querySelectorAll('.movie-card.selected').forEach(el => el.classList.remove('selected'));
+    });
+  }
+
+  panel.querySelectorAll('.chip__remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = Number(btn.dataset.id);
+      compareSelection = compareSelection.filter(m => m.id !== id);
+      renderCompareViewPanel();
+      const card = document.querySelector(`.movie-card[data-movie-id="${id}"]`);
+      card?.classList.remove('selected');
+    });
+  });
+}
+
+function toggleCompareSelection(movie) {
+  const idx = compareSelection.findIndex((m) => m.id === movie.id);
+  if (idx !== -1) {
+    compareSelection.splice(idx, 1);
+    renderCompareViewPanel();
+    const card = document.querySelector(`.movie-card[data-movie-id="${movie.id}"]`);
+    card?.classList.remove('selected');
+    return;
+  }
+  if (compareSelection.length >= 2) {
+    const removed = compareSelection.shift();
+    const removedCard = document.querySelector(`.movie-card[data-movie-id="${removed.id}"]`);
+    removedCard?.classList.remove('selected');
+  }
+  compareSelection.push(movie);
+  renderCompareViewPanel();
+  const card = document.querySelector(`.movie-card[data-movie-id="${movie.id}"]`);
+  card?.classList.add('selected');
+}
+
+const originalCreateMovieCard = createMovieCard;
+function createMovieCardWithCompare(movie) {
+  const html = originalCreateMovieCard(movie);
+  return html.replace(
+    '</article>',
+    `
+      <div class="movie-card__actions">
+        <button type="button" class="movie-card__compare" data-movie-id="${movie.id}">Ajouter à la comparaison</button>
+      </div>
+    </article>`
+  );
+}
+
+function addCompareListeners() {
+  document.querySelectorAll('.movie-card__compare').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = Number(btn.dataset.movieId);
+      const card = btn.closest('.movie-card');
+      const favBtn = card?.querySelector('.movie-card__favorite');
+      let payload = null;
+      if (favBtn?.dataset.movie) {
+        try { payload = JSON.parse(decodeURIComponent(favBtn.dataset.movie)); } catch {}
+      }
+      if (!payload) {
+        const title = card?.querySelector('.movie-card__title')?.textContent || '';
+        payload = { id, title };
+      }
+      toggleCompareSelection(payload);
+    });
+  });
+}
+
+export function compareView() {
+  app.innerHTML = `
+    <section class="compare-layout">
+      <div class="compare-layout__panel" id="compare-panel-local" aria-live="polite"></div>
+      <div class="compare-layout__grid">
+        <div class="compare-layout__toolbar">
+          <h1 class="page-title">🎯 Comparateur de films</h1>
+          <p>Sélectionnez deux films ci-dessous puis comparez-les à gauche.</p>
+        </div>
+        <div id="compare-list"></div>
+      </div>
+    </section>
+  `;
+
+  (async () => {
+    try {
+      const data = await tmdbApi.getPopularMovies();
+      const movies = data.results || [];
+      const container = document.getElementById('compare-list');
+      if (!container) return;
+      container.innerHTML = `
+        <div class="movies-grid movies-grid--compact">
+          ${movies.map(m => createMovieCardWithCompare(m)).join('')}
+        </div>
+      `;
+      addMovieCardListeners();
+      addCompareListeners();
+      renderCompareViewPanel();
+    } catch (err) {
+      showError(err.message);
+    }
+  })();
+}
+
+// Ne pas contaminer les autres vues: pas de panneau global, pas de listeners auto en dehors de compareView.
