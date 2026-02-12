@@ -108,6 +108,15 @@ body {
   gap: 2rem;
 }
 
+.movies-grid--compact {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1.5rem;
+
+  .movie-card__poster {
+    height: 240px;
+  }
+}
+
 // Movie Card
 .movie-card {
   background: white;
@@ -185,6 +194,215 @@ body {
     border-radius: 4px;
     font-size: 0.875rem;
     margin-top: 0.5rem;
+  }
+
+  &__actions {
+    padding: 0.75rem 1rem 1rem;
+  }
+
+  &__compare {
+    width: 100%;
+    border: none;
+    border-radius: $border-radius;
+    padding: 0.6rem 0.75rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    background: linear-gradient(135deg, $dark-bg, lighten($dark-bg, 15%));
+    color: $text-light;
+    cursor: pointer;
+    transition: $transition;
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba($dark-bg, 0.2);
+    }
+  }
+
+  &.selected {
+    outline: 3px solid rgba($primary-color, 0.6);
+    box-shadow: 0 12px 22px rgba($primary-color, 0.25);
+    transform: translateY(-4px);
+  }
+}
+
+// Compare Layout
+.compare-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 2rem;
+  align-items: start;
+
+  @media (max-width: 1024px) {
+    grid-template-columns: 1fr;
+  }
+
+  &__panel {
+    position: sticky;
+    top: 6rem;
+    background: white;
+    border-radius: $border-radius;
+    padding: 1.5rem;
+    @include card-shadow;
+
+    @media (max-width: 1024px) {
+      position: static;
+    }
+  }
+
+  &__toolbar {
+    margin-bottom: 1.5rem;
+
+    p {
+      text-align: center;
+      color: #666;
+      margin-top: -1rem;
+    }
+  }
+}
+
+.compare {
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  &__title {
+    font-size: 1.2rem;
+    color: $dark-bg;
+  }
+
+  &__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  &__count {
+    background: rgba($primary-color, 0.15);
+    color: $dark-bg;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+
+  &__clear {
+    background: transparent;
+    border: 1px solid rgba($dark-bg, 0.2);
+    color: $dark-bg;
+    padding: 0.35rem 0.75rem;
+    border-radius: $border-radius;
+    cursor: pointer;
+    transition: $transition;
+
+    &:hover {
+      border-color: $primary-color;
+      color: $primary-color;
+    }
+  }
+
+  &__placeholder {
+    padding: 1.5rem;
+    border-radius: $border-radius;
+    background: linear-gradient(135deg, rgba($primary-color, 0.08), rgba($secondary-color, 0.12));
+    color: #4a4a4a;
+    text-align: center;
+  }
+
+  &__slots {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  &__slot {
+    padding: 0.75rem;
+    border-radius: $border-radius;
+    background: #f3f5f7;
+  }
+
+  &__slot--empty {
+    color: #777;
+    font-style: italic;
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba($dark-bg, 0.08);
+    color: $dark-bg;
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: white;
+    border-radius: $border-radius;
+    overflow: hidden;
+    @include card-shadow;
+
+    th,
+    td {
+      padding: 0.75rem 0.9rem;
+      text-align: left;
+    }
+
+    thead th {
+      background: $dark-bg;
+      color: $text-light;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    tbody tr:nth-child(even) {
+      background: #f7f9fb;
+    }
+
+    tbody td:first-child {
+      font-weight: 600;
+      color: #2c3e50;
+    }
+  }
+
+  &__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    background: rgba($secondary-color, 0.2);
+    color: $dark-bg;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+}
+
+.chip__remove {
+  border: none;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: $transition;
+
+  &:hover {
+    color: #e74c3c;
   }
 }
 
