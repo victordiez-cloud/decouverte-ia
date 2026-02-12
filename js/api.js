@@ -115,6 +115,16 @@ class TMDBApi {
   }
 
   /**
+   * Récupérer les films similaires pour un film donné
+   * @param {number} movieId - ID du film
+   * @param {number} page - Numéro de page
+   * @returns {Promise<Object>}
+   */
+  async getSimilarMovies(movieId, page = 1) {
+    return this.fetchData(`/movie/${movieId}/similar`, { page });
+  }
+
+  /**
    * Récupérer les films les mieux notés
    * @param {number} page - Numéro de page
    * @returns {Promise<Object>}

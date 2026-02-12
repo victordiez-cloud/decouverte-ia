@@ -773,12 +773,17 @@ export async function movieDetailView(movieId) {
   showLoading();
 
   try {
-    const movie = await tmdbApi.getMovieDetails(movieId);
+    const [movie, similar] = await Promise.all([
+      tmdbApi.getMovieDetails(movieId),
+      tmdbApi.getSimilarMovies(movieId),
+    ]);
     const posterUrl = getImageUrl(movie.poster_path, "poster", "large");
     const releaseDate = movie.release_date
       ? new Date(movie.release_date).toLocaleDateString("fr-FR")
       : "Date inconnue";
     const favorite = isFavorite(movie.id);
+    const similarMovies =
+      similar && Array.isArray(similar.results) ? similar.results : [];
 
     app.innerHTML = `
             <a href="#/" style="display: inline-block; margin-bottom: 2rem; color: #01b4e4; text-decoration: none;">
@@ -843,6 +848,22 @@ export async function movieDetailView(movieId) {
                     `
                         : ""
                     }
+                    
+                    ${
+                      similarMovies.length > 0
+                        ? `
+                        <section class="movie-detail__similar" style="margin-top: 3rem;">
+                          <h3 style="margin-bottom: 1rem;">Films similaires</h3>
+                          <div class="movies-grid">
+                            ${similarMovies
+                              .slice(0, 8)
+                              .map((m) => createMovieCard(m))
+                              .join("")}
+                          </div>
+                        </section>
+                      `
+                        : ""
+                    }
                 </div>
             </div>
         `;
@@ -864,6 +885,9 @@ export async function movieDetailView(movieId) {
         );
       });
     }
+
+    // Activer la navigation sur les cartes de films similaires
+    addMovieCardListeners();
   } catch (error) {
     showError(error.message);
   }
