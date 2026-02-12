@@ -352,6 +352,55 @@ function updateWeightIndicators() {
   }
 }
 
+// Memoire de la derniere surprise (pour eviter les doublons successifs)
+let lastSurpriseId = null;
+
+function createSurpriseButton(buttonId, label = "Surprise Me", extraClass = "") {
+  const classes = ["surprise-button", extraClass].filter(Boolean).join(" ");
+  return `
+    <button type="button" id="${buttonId}" class="${classes}">
+      <span class="surprise-button__icon">🎲</span>
+      <span class="surprise-button__label">${label}</span>
+    </button>
+  `;
+}
+
+function getSurpriseCandidate(movies, maxPool = 10) {
+  const pool = (movies || []).filter((m) => m && m.id);
+  if (pool.length === 0) return null;
+
+  const topCount = Math.min(maxPool, pool.length);
+  if (topCount === 1) {
+    return pool[0];
+  }
+
+  let candidate = null;
+  let attempts = 0;
+  do {
+    const randomIndex = Math.floor(Math.random() * topCount);
+    candidate = pool[randomIndex];
+    attempts += 1;
+  } while (candidate && candidate.id === lastSurpriseId && attempts < 6);
+
+  return candidate || pool[0];
+}
+
+function initSurpriseButton(buttonId, movies, options = {}) {
+  const surpriseButton = document.getElementById(buttonId);
+  if (!surpriseButton) return;
+
+  const pool = (movies || []).filter((m) => m && m.id);
+  surpriseButton.disabled = pool.length === 0;
+
+  surpriseButton.addEventListener("click", () => {
+    if (pool.length === 0) return;
+    const candidate = getSurpriseCandidate(pool, options.maxPool || 10);
+    if (!candidate) return;
+    lastSurpriseId = candidate.id;
+    window.location.hash = `/movie/${candidate.id}`;
+  });
+}
+
 /**
  * Afficher un message quand aucun film n'est trouvé
  * @returns {string} HTML du message
@@ -502,7 +551,10 @@ export async function homeView() {
             </section>
 
             <section>
-                <h2 class="page-title">Films Populaires</h2>
+                <div class="results-header results-header--section">
+                  <h2 class="section-title">Films Populaires</h2>
+                  ${createSurpriseButton("home-surprise-btn")}
+                </div>
                 <div class="movies-grid">
                     ${movies.map((movie) => createMovieCard(movie)).join("")}
                 </div>
@@ -510,6 +562,7 @@ export async function homeView() {
         `;
 
     addMovieCardListeners();
+    initSurpriseButton("home-surprise-btn", movies, { maxPool: 8 });
   } catch (error) {
     showError(error.message);
   }
@@ -534,12 +587,17 @@ export async function popularView() {
 
     app.innerHTML = `
             <h1 class="page-title">🔥 Films Populaires</h1>
+            <div class="results-header">
+              <p class="results-count">Triés par score personnalisé</p>
+              ${createSurpriseButton("popular-surprise-btn")}
+            </div>
             <div class="movies-grid">
                 ${movies.map((movie) => createMovieCard(movie)).join("")}
             </div>
         `;
 
     addMovieCardListeners();
+    initSurpriseButton("popular-surprise-btn", movies);
   } catch (error) {
     showError(error.message);
   }
@@ -590,52 +648,14 @@ export async function discoverView() {
       resultsContainer.innerHTML = `
         <div class="results-header">
           <p class="results-count">${totalResults} film(s) trouvé(s) — triés par score personnalisé</p>
-          <button type="button" id="surprise-me-btn" class="surprise-button">
-            Surprise Me
-          </button>
+          ${createSurpriseButton("discover-surprise-btn")}
         </div>
         <div class="movies-grid">
           ${scoredMovies.map((movie) => createMovieCard(movie)).join("")}
         </div>
       `;
       addMovieCardListeners();
-
-      const surpriseButton = document.getElementById("surprise-me-btn");
-      if (surpriseButton) {
-        surpriseButton.disabled = scoredMovies.length === 0;
-        surpriseButton.addEventListener("click", () => {
-          if (scoredMovies.length === 0) {
-            return;
-          }
-
-          const topCount = Math.min(10, scoredMovies.length);
-
-          if (topCount === 1) {
-            const onlyMovie = scoredMovies[0];
-            lastSurpriseId = onlyMovie.id;
-            window.location.hash = `/movie/${onlyMovie.id}`;
-            return;
-          }
-
-          let candidate = null;
-          let attempts = 0;
-
-          do {
-            const randomIndex = Math.floor(Math.random() * topCount);
-            candidate = scoredMovies[randomIndex];
-            attempts += 1;
-          } while (
-            candidate &&
-            candidate.id === lastSurpriseId &&
-            attempts < 5
-          );
-
-          if (candidate) {
-            lastSurpriseId = candidate.id;
-            window.location.hash = `/movie/${candidate.id}`;
-          }
-        });
-      }
+      initSurpriseButton("discover-surprise-btn", scoredMovies);
     };
 
     // Fonction pour charger depuis l'API puis afficher les films
@@ -845,15 +865,22 @@ export async function movieDetailView(movieId) {
                 <div class="movie-detail__content">
                     <div class="movie-detail__header">
                         <h1>${movie.title}</h1>
-                        <button
-                            type="button"
-                            class="movie-detail__favorite ${favorite ? "is-favorite" : ""}"
-                            aria-pressed="${favorite ? "true" : "false"}"
-                            aria-label="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
-                            title="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
-                        >
-                            ❤
-                        </button>
+                        <div class="movie-detail__actions">
+                          <button
+                              type="button"
+                              class="movie-detail__favorite ${favorite ? "is-favorite" : ""}"
+                              aria-pressed="${favorite ? "true" : "false"}"
+                              aria-label="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
+                              title="${favorite ? "Retirer des favoris" : "Ajouter aux favoris"}"
+                          >
+                              ❤
+                          </button>
+                          ${createSurpriseButton(
+                            "detail-surprise-btn",
+                            "Surprise Me",
+                            "surprise-button--compact",
+                          )}
+                        </div>
                     </div>
                     ${movie.tagline ? `<p class="movie-detail__tagline">"${movie.tagline}"</p>` : ""}
                     
@@ -929,6 +956,12 @@ export async function movieDetailView(movieId) {
       });
     }
 
+    initSurpriseButton(
+      "detail-surprise-btn",
+      similarMovies.filter((m) => m && m.id !== movie.id),
+      { maxPool: 8 },
+    );
+
     // Activer la navigation sur les cartes de films similaires
     addMovieCardListeners();
   } catch (error) {
@@ -965,13 +998,17 @@ export function favoritesView() {
 
   app.innerHTML = `
     <h1 class="page-title">💡 Mes recommandations</h1>
-    <p class="results-count">${favorites.length} film(s) en favori</p>
+    <div class="results-header">
+      <p class="results-count">${favorites.length} film(s) en favori</p>
+      ${createSurpriseButton("favorites-surprise-btn")}
+    </div>
     <div class="movies-grid" data-view="favorites">
       ${favorites.map((movie) => createMovieCard(movie)).join("")}
     </div>
   `;
 
   addMovieCardListeners();
+  initSurpriseButton("favorites-surprise-btn", favorites);
 }
 
 // Etat local pour la comparaison (confiné à la vue Comparer)
@@ -981,39 +1018,93 @@ function formatDateFR(dateStr) {
   return dateStr ? new Date(dateStr).toLocaleDateString("fr-FR") : "Date inconnue";
 }
 
-function compareTableHTML(a, b) {
+function toNumberOrNull(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toTimestampOrNull(dateStr) {
+  if (!dateStr) return null;
+  const ts = new Date(dateStr).getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function getValueState(valueA, valueB) {
+  if (valueA === null || valueB === null) {
+    return { a: "na", b: "na" };
+  }
+  if (valueA === valueB) {
+    return { a: "tie", b: "tie" };
+  }
+  return valueA > valueB ? { a: "win", b: "lose" } : { a: "lose", b: "win" };
+}
+
+function compareColumnHeader(movie) {
+  const poster = getImageUrl(movie.poster_path, "poster", "small");
   return `
-    <table class="compare__table" role="table" aria-label="Tableau comparatif des films sélectionnés">
-      <thead>
-        <tr>
-          <th scope="col">Critère</th>
-          <th scope="col">${a.title}</th>
-          <th scope="col">${b.title}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td scope="row">Note</td>
-          <td><span class="compare__badge">⭐ ${a.vote_average?.toFixed?.(1) ?? "N/A"}</span></td>
-          <td><span class="compare__badge">⭐ ${b.vote_average?.toFixed?.(1) ?? "N/A"}</span></td>
-        </tr>
-        <tr>
-          <td scope="row">Popularité</td>
-          <td>${a.popularity ?? "N/A"}</td>
-          <td>${b.popularity ?? "N/A"}</td>
-        </tr>
-        <tr>
-          <td scope="row">Date</td>
-          <td>${formatDateFR(a.release_date)}</td>
-          <td>${formatDateFR(b.release_date)}</td>
-        </tr>
-        <tr>
-          <td scope="row">Nombre de votes</td>
-          <td>${a.vote_count ?? "N/A"}</td>
-          <td>${b.vote_count ?? "N/A"}</td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="compare__film-head">
+      <img class="compare__film-poster" src="${poster}" alt="${movie.title}" loading="lazy">
+      <span class="compare__film-title">${movie.title}</span>
+    </div>
+  `;
+}
+
+function compareTableHTML(a, b) {
+  const ratingStates = getValueState(
+    toNumberOrNull(a.vote_average),
+    toNumberOrNull(b.vote_average),
+  );
+  const popularityStates = getValueState(
+    toNumberOrNull(a.popularity),
+    toNumberOrNull(b.popularity),
+  );
+  const votesStates = getValueState(
+    toNumberOrNull(a.vote_count),
+    toNumberOrNull(b.vote_count),
+  );
+  const recencyStates = getValueState(
+    toTimestampOrNull(a.release_date),
+    toTimestampOrNull(b.release_date),
+  );
+
+  return `
+    <div class="compare__table-wrap">
+      <table class="compare__table" role="table" aria-label="Tableau comparatif des films sélectionnés">
+        <thead>
+          <tr>
+            <th scope="col">Critère</th>
+            <th scope="col">${compareColumnHeader(a)}</th>
+            <th scope="col">${compareColumnHeader(b)}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td scope="row">Note moyenne</td>
+            <td class="compare__value compare__value--${ratingStates.a}">
+              <span class="compare__badge">⭐ ${a.vote_average?.toFixed?.(1) ?? "N/A"}</span>
+            </td>
+            <td class="compare__value compare__value--${ratingStates.b}">
+              <span class="compare__badge">⭐ ${b.vote_average?.toFixed?.(1) ?? "N/A"}</span>
+            </td>
+          </tr>
+          <tr>
+            <td scope="row">Popularité</td>
+            <td class="compare__value compare__value--${popularityStates.a}">${a.popularity?.toFixed?.(1) ?? "N/A"}</td>
+            <td class="compare__value compare__value--${popularityStates.b}">${b.popularity?.toFixed?.(1) ?? "N/A"}</td>
+          </tr>
+          <tr>
+            <td scope="row">Date de sortie</td>
+            <td class="compare__value compare__value--${recencyStates.a}">${formatDateFR(a.release_date)}</td>
+            <td class="compare__value compare__value--${recencyStates.b}">${formatDateFR(b.release_date)}</td>
+          </tr>
+          <tr>
+            <td scope="row">Nombre de votes</td>
+            <td class="compare__value compare__value--${votesStates.a}">${a.vote_count ?? "N/A"}</td>
+            <td class="compare__value compare__value--${votesStates.b}">${b.vote_count ?? "N/A"}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
