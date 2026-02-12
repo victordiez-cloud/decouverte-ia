@@ -569,6 +569,7 @@ export async function discoverView() {
 
     let cachedMovies = [];
     let totalResults = 0;
+    let lastSurpriseId = null;
 
     const renderMovies = () => {
       const resultsContainer = document.getElementById("discover-results");
@@ -587,12 +588,54 @@ export async function discoverView() {
 
       const scoredMovies = scoreMovies(cachedMovies, getScoringWeights());
       resultsContainer.innerHTML = `
-        <p class="results-count">${totalResults} film(s) trouvé(s) — triés par score personnalisé</p>
+        <div class="results-header">
+          <p class="results-count">${totalResults} film(s) trouvé(s) — triés par score personnalisé</p>
+          <button type="button" id="surprise-me-btn" class="surprise-button">
+            Surprise Me
+          </button>
+        </div>
         <div class="movies-grid">
           ${scoredMovies.map((movie) => createMovieCard(movie)).join("")}
         </div>
       `;
       addMovieCardListeners();
+
+      const surpriseButton = document.getElementById("surprise-me-btn");
+      if (surpriseButton) {
+        surpriseButton.disabled = scoredMovies.length === 0;
+        surpriseButton.addEventListener("click", () => {
+          if (scoredMovies.length === 0) {
+            return;
+          }
+
+          const topCount = Math.min(10, scoredMovies.length);
+
+          if (topCount === 1) {
+            const onlyMovie = scoredMovies[0];
+            lastSurpriseId = onlyMovie.id;
+            window.location.hash = `/movie/${onlyMovie.id}`;
+            return;
+          }
+
+          let candidate = null;
+          let attempts = 0;
+
+          do {
+            const randomIndex = Math.floor(Math.random() * topCount);
+            candidate = scoredMovies[randomIndex];
+            attempts += 1;
+          } while (
+            candidate &&
+            candidate.id === lastSurpriseId &&
+            attempts < 5
+          );
+
+          if (candidate) {
+            lastSurpriseId = candidate.id;
+            window.location.hash = `/movie/${candidate.id}`;
+          }
+        });
+      }
     };
 
     // Fonction pour charger depuis l'API puis afficher les films
