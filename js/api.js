@@ -75,11 +75,13 @@ class TMDBApi {
       sort_by: options.sortBy || "popularity.desc",
       "vote_average.gte": options.minRating,
       "vote_average.lte": options.maxRating,
+      "vote_count.gte": options.minVotes,
       with_genres: options.genres,
       "primary_release_date.gte": options.releaseDateFrom,
       "primary_release_date.lte": options.releaseDateTo,
       year: options.year,
       with_original_language: options.language,
+      include_adult: options.includeAdult,
     };
 
     return this.fetchData("/discover/movie", params);

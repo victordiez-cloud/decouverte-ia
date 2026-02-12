@@ -354,6 +354,15 @@ function updateWeightIndicators() {
 
 // Memoire de la derniere surprise (pour eviter les doublons successifs)
 let lastSurpriseId = null;
+let surpriseTotalPagesCache = null;
+let surpriseTotalPagesCacheTime = 0;
+const SURPRISE_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_TMDB_DISCOVER_PAGE = 500;
+const RANDOM_DISCOVER_PARAMS = {
+  sortBy: "popularity.desc",
+  includeAdult: false,
+  minVotes: 20,
+};
 
 function createSurpriseButton(buttonId, label = "Surprise Me", extraClass = "") {
   const classes = ["surprise-button", extraClass].filter(Boolean).join(" ");
@@ -365,39 +374,91 @@ function createSurpriseButton(buttonId, label = "Surprise Me", extraClass = "") 
   `;
 }
 
-function getSurpriseCandidate(movies, maxPool = 10) {
-  const pool = (movies || []).filter((m) => m && m.id);
-  if (pool.length === 0) return null;
-
-  const topCount = Math.min(maxPool, pool.length);
-  if (topCount === 1) {
-    return pool[0];
-  }
-
-  let candidate = null;
-  let attempts = 0;
-  do {
-    const randomIndex = Math.floor(Math.random() * topCount);
-    candidate = pool[randomIndex];
-    attempts += 1;
-  } while (candidate && candidate.id === lastSurpriseId && attempts < 6);
-
-  return candidate || pool[0];
+function pickRandomMovieFromResults(results, excludedIds = []) {
+  const blocked = new Set(
+    [lastSurpriseId, ...excludedIds].filter(Boolean).map((id) => Number(id)),
+  );
+  const candidates = (results || []).filter(
+    (movie) => movie && movie.id && !blocked.has(Number(movie.id)),
+  );
+  if (candidates.length === 0) return null;
+  const randomIndex = Math.floor(Math.random() * candidates.length);
+  return candidates[randomIndex];
 }
 
-function initSurpriseButton(buttonId, movies, options = {}) {
+async function getRandomMovieFromApi(excludedIds = []) {
+  const now = Date.now();
+  const shouldRefreshPages =
+    !surpriseTotalPagesCache ||
+    now - surpriseTotalPagesCacheTime > SURPRISE_CACHE_TTL_MS;
+
+  if (shouldRefreshPages) {
+    const firstPage = await tmdbApi.discoverMovies({
+      ...RANDOM_DISCOVER_PARAMS,
+      page: 1,
+    });
+    surpriseTotalPagesCache = Math.min(
+      firstPage.total_pages || 1,
+      MAX_TMDB_DISCOVER_PAGE,
+    );
+    surpriseTotalPagesCacheTime = now;
+
+    const immediateCandidate = pickRandomMovieFromResults(
+      firstPage.results,
+      excludedIds,
+    );
+    if (immediateCandidate) return immediateCandidate;
+  }
+
+  const totalPages = Math.max(1, surpriseTotalPagesCache || 1);
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const randomPage = 1 + Math.floor(Math.random() * totalPages);
+    const pageData = await tmdbApi.discoverMovies({
+      ...RANDOM_DISCOVER_PARAMS,
+      page: randomPage,
+    });
+    const candidate = pickRandomMovieFromResults(pageData.results, excludedIds);
+    if (candidate) return candidate;
+  }
+
+  return null;
+}
+
+function initSurpriseButton(buttonId, options = {}) {
   const surpriseButton = document.getElementById(buttonId);
   if (!surpriseButton) return;
+  const label = surpriseButton.querySelector(".surprise-button__label");
+  const defaultLabel = label ? label.textContent : "";
 
-  const pool = (movies || []).filter((m) => m && m.id);
-  surpriseButton.disabled = pool.length === 0;
+  surpriseButton.disabled = false;
 
-  surpriseButton.addEventListener("click", () => {
-    if (pool.length === 0) return;
-    const candidate = getSurpriseCandidate(pool, options.maxPool || 10);
-    if (!candidate) return;
-    lastSurpriseId = candidate.id;
-    window.location.hash = `/movie/${candidate.id}`;
+  surpriseButton.addEventListener("click", async () => {
+    if (surpriseButton.classList.contains("is-loading")) return;
+    surpriseButton.classList.add("is-loading");
+    surpriseButton.disabled = true;
+    if (label) label.textContent = "Loading...";
+
+    try {
+      const candidate = await getRandomMovieFromApi(options.excludeIds || []);
+      if (!candidate) {
+        throw new Error("Aucun film aléatoire disponible");
+      }
+      lastSurpriseId = candidate.id;
+      window.location.hash = `/movie/${candidate.id}`;
+    } catch (error) {
+      console.error("Surprise Me error:", error);
+      if (label) {
+        label.textContent = "Erreur API";
+      }
+    } finally {
+      if (label) {
+        setTimeout(() => {
+          label.textContent = defaultLabel || "Surprise Me";
+        }, 900);
+      }
+      surpriseButton.disabled = false;
+      surpriseButton.classList.remove("is-loading");
+    }
   });
 }
 
@@ -562,7 +623,7 @@ export async function homeView() {
         `;
 
     addMovieCardListeners();
-    initSurpriseButton("home-surprise-btn", movies, { maxPool: 8 });
+    initSurpriseButton("home-surprise-btn");
   } catch (error) {
     showError(error.message);
   }
@@ -597,7 +658,7 @@ export async function popularView() {
         `;
 
     addMovieCardListeners();
-    initSurpriseButton("popular-surprise-btn", movies);
+    initSurpriseButton("popular-surprise-btn");
   } catch (error) {
     showError(error.message);
   }
@@ -627,7 +688,6 @@ export async function discoverView() {
 
     let cachedMovies = [];
     let totalResults = 0;
-    let lastSurpriseId = null;
 
     const renderMovies = () => {
       const resultsContainer = document.getElementById("discover-results");
@@ -655,7 +715,7 @@ export async function discoverView() {
         </div>
       `;
       addMovieCardListeners();
-      initSurpriseButton("discover-surprise-btn", scoredMovies);
+      initSurpriseButton("discover-surprise-btn");
     };
 
     // Fonction pour charger depuis l'API puis afficher les films
@@ -956,11 +1016,7 @@ export async function movieDetailView(movieId) {
       });
     }
 
-    initSurpriseButton(
-      "detail-surprise-btn",
-      similarMovies.filter((m) => m && m.id !== movie.id),
-      { maxPool: 8 },
-    );
+    initSurpriseButton("detail-surprise-btn", { excludeIds: [movie.id] });
 
     // Activer la navigation sur les cartes de films similaires
     addMovieCardListeners();
@@ -1008,7 +1064,7 @@ export function favoritesView() {
   `;
 
   addMovieCardListeners();
-  initSurpriseButton("favorites-surprise-btn", favorites);
+  initSurpriseButton("favorites-surprise-btn");
 }
 
 // Etat local pour la comparaison (confiné à la vue Comparer)
