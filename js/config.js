@@ -8,7 +8,7 @@
 const config = {
   // Clé API TMDB - Remplacez par votre propre clé
   // Obtenez votre clé sur: https://www.themoviedb.org/settings/api
-  API_KEY: "VOTRE_CLE_API_ICI",
+  API_KEY: "d601eb629ac424f6f0c3bdd3050037f9",
 
   // URL de base de l'API
   BASE_URL: "https://api.themoviedb.org/3",
